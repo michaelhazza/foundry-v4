@@ -1,0 +1,2902 @@
+openapi: 3.0.3
+info:
+  title: Foundry API
+  version: 1.0.0
+  description: |
+    API specification for Foundry - a multi-tenant platform for transforming business data into AI training datasets.
+    
+    ## Authentication
+    All authenticated endpoints require a JWT Bearer token in the Authorization header.
+    
+    ## Error Codes
+    All errors use codes from the centralized ERROR_CODES registry defined in this specification.
+    
+    ## Rate Limiting
+    - Auth endpoints: 5 req/min
+    - Upload endpoints: 20 req/hour
+    - Standard endpoints: 100 req/min
+    
+    Rate limit headers included in all responses:
+    - `X-RateLimit-Limit`: Requests allowed per window
+    - `X-RateLimit-Remaining`: Requests remaining
+    - `X-RateLimit-Reset`: Timestamp when limit resets
+
+servers:
+  - url: http://localhost:5000/api
+    description: Development (via Vite proxy)
+  - url: https://{repl-name}.{username}.replit.dev/api
+    description: Production (Replit)
+    variables:
+      repl-name:
+        default: foundry
+      username:
+        default: user
+
+tags:
+  - name: System
+    description: System health and status
+  - name: Authentication
+    description: User authentication and session management
+  - name: Invitations
+    description: Team member invitations
+  - name: Team
+    description: Organization team management
+  - name: Projects
+    description: Project management
+  - name: Sources
+    description: Data source management
+  - name: Mappings
+    description: Field mapping configuration
+  - name: Processing
+    description: Data processing jobs
+  - name: Exports
+    description: Export generation and download
+  - name: Audit
+    description: Audit logging
+  - name: Admin
+    description: Platform administration
+
+security:
+  - bearerAuth: []
+
+paths:
+  # ============================================================================
+  # SYSTEM
+  # ============================================================================
+  /health:
+    get:
+      tags: [System]
+      summary: Health check
+      description: Returns system health status. Used by Replit for deployment monitoring.
+      operationId: getHealth
+      security: []
+      responses:
+        '200':
+          description: System is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+        '503':
+          description: System is unhealthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+  # ============================================================================
+  # AUTHENTICATION
+  # ============================================================================
+  /auth/login:
+    post:
+      tags: [Authentication]
+      summary: Login with email and password
+      description: Authenticates user and returns access token. Sets refresh token as HttpOnly cookie.
+      operationId: login
+      security: []
+      x-rate-limit: auth
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Login successful
+          headers:
+            Set-Cookie:
+              schema:
+                type: string
+              description: HttpOnly refresh token cookie
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '401':
+          $ref: '#/components/responses/InvalidCredentials'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
+      x-failure-modes:
+        - input: '{"email": "user@example.com", "password": "correct"}'
+          behavior: "Returns access token and user data"
+          status: 200
+        - input: '{"email": "user@example.com", "password": "wrong"}'
+          behavior: "Invalid credentials"
+          status: 401
+          errorCode: INVALID_CREDENTIALS
+        - input: '{"email": "invalid", "password": "test"}'
+          behavior: "Validation error"
+          status: 422
+          errorCode: VALIDATION_ERROR
+
+  /auth/logout:
+    post:
+      tags: [Authentication]
+      summary: Logout current user
+      description: Invalidates refresh token cookie.
+      operationId: logout
+      responses:
+        '200':
+          description: Logout successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessMessage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /auth/refresh:
+    post:
+      tags: [Authentication]
+      summary: Refresh access token
+      description: Uses refresh token from HttpOnly cookie to issue new access token.
+      operationId: refreshToken
+      security: []
+      x-rate-limit: auth
+      responses:
+        '200':
+          description: Token refreshed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RefreshResponse'
+        '401':
+          $ref: '#/components/responses/TokenExpired'
+
+  /auth/me:
+    get:
+      tags: [Authentication]
+      summary: Get current user
+      description: Returns the authenticated user's profile and organization membership.
+      operationId: getCurrentUser
+      responses:
+        '200':
+          description: Current user data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CurrentUserResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /auth/forgot-password:
+    post:
+      tags: [Authentication]
+      summary: Request password reset
+      description: Sends password reset email. Always returns success to prevent email enumeration.
+      operationId: forgotPassword
+      security: []
+      x-rate-limit: auth
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ForgotPasswordRequest'
+      responses:
+        '200':
+          description: Reset email sent (or would be sent if email exists)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessMessage'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
+
+  /auth/reset-password:
+    post:
+      tags: [Authentication]
+      summary: Reset password with token
+      description: Resets password using token from email.
+      operationId: resetPassword
+      security: []
+      x-rate-limit: auth
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResetPasswordRequest'
+      responses:
+        '200':
+          description: Password reset successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessMessage'
+        '422':
+          description: Invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # ============================================================================
+  # INVITATIONS
+  # ============================================================================
+  /invitations:
+    post:
+      tags: [Invitations]
+      summary: Send invitation
+      description: Invites a new team member to the organization. Requires admin role.
+      operationId: createInvitation
+      x-required-role: admin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateInvitationRequest'
+      responses:
+        '201':
+          description: Invitation sent
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvitationResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          description: User already member or pending invitation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+    get:
+      tags: [Invitations]
+      summary: List pending invitations
+      description: Returns all pending invitations for the organization. Requires admin role.
+      operationId: listInvitations
+      x-required-role: admin
+      responses:
+        '200':
+          description: List of pending invitations
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvitationListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /invitations/{invitationId}:
+    delete:
+      tags: [Invitations]
+      summary: Cancel invitation
+      description: Cancels a pending invitation. Requires admin role.
+      operationId: cancelInvitation
+      x-required-role: admin
+      parameters:
+        - $ref: '#/components/parameters/invitationId'
+      responses:
+        '200':
+          description: Invitation cancelled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessMessage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      x-failure-modes:
+        - input: "/invitations/123"
+          behavior: "Cancels invitation"
+          status: 200
+        - input: "/invitations/abc"
+          behavior: "Invalid ID"
+          status: 400
+          errorCode: INVALID_ID
+        - input: "/invitations/999999"
+          behavior: "Not found"
+          status: 404
+          errorCode: INVITATION_NOT_FOUND
+
+  /invitations/{token}/validate:
+    get:
+      tags: [Invitations]
+      summary: Validate invitation token
+      description: Checks if an invitation token is valid and returns invitation details.
+      operationId: validateInvitation
+      security: []
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Invitation token from email
+      responses:
+        '200':
+          description: Valid invitation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvitationValidationResponse'
+        '404':
+          description: Invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /invitations/{token}/accept:
+    post:
+      tags: [Invitations]
+      summary: Accept invitation
+      description: Creates user account and accepts invitation.
+      operationId: acceptInvitation
+      security: []
+      x-rate-limit: auth
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AcceptInvitationRequest'
+      responses:
+        '201':
+          description: Account created and invitation accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Email already in use
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Token expired or validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # ============================================================================
+  # TEAM
+  # ============================================================================
+  /team:
+    get:
+      tags: [Team]
+      summary: List team members
+      description: Returns all members of the current organization.
+      operationId: listTeamMembers
+      responses:
+        '200':
+          description: List of team members
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TeamMemberListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /team/{userId}:
+    get:
+      tags: [Team]
+      summary: Get team member
+      description: Returns details of a specific team member.
+      operationId: getTeamMember
+      parameters:
+        - $ref: '#/components/parameters/userId'
+      responses:
+        '200':
+          description: Team member details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TeamMemberResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      x-failure-modes:
+        - input: "/team/123"
+          behavior: "Returns team member"
+          status: 200
+        - input: "/team/abc"
+          behavior: "Invalid ID"
+          status: 400
+          errorCode: INVALID_ID
+        - input: "/team/999999"
+          behavior: "Not found or not in org"
+          status: 404
+          errorCode: USER_NOT_FOUND
+
+    patch:
+      tags: [Team]
+      summary: Update member role
+      description: Changes a team member's role. Requires admin role.
+      operationId: updateTeamMember
+      x-required-role: admin
+      parameters:
+        - $ref: '#/components/parameters/userId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateTeamMemberRequest'
+      responses:
+        '200':
+          description: Role updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TeamMemberResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+    delete:
+      tags: [Team]
+      summary: Remove team member
+      description: Removes a member from the organization. Requires admin role. Cannot remove last admin.
+      operationId: removeTeamMember
+      x-required-role: admin
+      parameters:
+        - $ref: '#/components/parameters/userId'
+      responses:
+        '200':
+          description: Member removed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessMessage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Cannot remove last admin
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # ============================================================================
+  # PROJECTS
+  # ============================================================================
+  /projects:
+    post:
+      tags: [Projects]
+      summary: Create project
+      description: Creates a new project in the organization. Requires editor role.
+      operationId: createProject
+      x-required-role: editor
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateProjectRequest'
+      responses:
+        '201':
+          description: Project created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          description: Project name already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+    get:
+      tags: [Projects]
+      summary: List projects
+      description: Returns all projects in the organization.
+      operationId: listProjects
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [active, archived]
+          description: Filter by project status
+        - $ref: '#/components/parameters/page'
+        - $ref: '#/components/parameters/limit'
+      responses:
+        '200':
+          description: List of projects
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /projects/{projectId}:
+    get:
+      tags: [Projects]
+      summary: Get project
+      description: Returns project details including source count and last job status.
+      operationId: getProject
+      parameters:
+        - $ref: '#/components/parameters/projectId'
+      responses:
+        '200':
+          description: Project details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectDetailResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      x-failure-modes:
+        - input: "/projects/123"
+          behavior: "Returns project"
+          status: 200
+        - input: "/projects/abc"
+          behavior: "Invalid ID"
+          status: 400
+          errorCode: INVALID_ID
+        - input: "/projects/999999"
+          behavior: "Not found"
+          status: 404
+          errorCode: PROJECT_NOT_FOUND
+
+    patch:
+      tags: [Projects]
+      summary: Update project
+      description: Updates project details, PII settings, or filter settings. Requires editor role.
+      operationId: updateProject
+      x-required-role: editor
+      parameters:
+        - $ref: '#/components/parameters/projectId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateProjectRequest'
+      responses:
+        '200':
+          description: Project updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Project name already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /projects/{projectId}/archive:
+    post:
+      tags: [Projects]
+      summary: Archive project
+      description: Archives a project. Archived projects are deleted after 90 days.
+      operationId: archiveProject
+      x-required-role: editor
+      parameters:
+        - $ref: '#/components/parameters/projectId'
+      responses:
+        '200':
+          description: Project archived
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /projects/{projectId}/restore:
+    post:
+      tags: [Projects]
+      summary: Restore project
+      description: Restores an archived project to active status.
+      operationId: restoreProject
+      x-required-role: editor
+      parameters:
+        - $ref: '#/components/parameters/projectId'
+      responses:
+        '200':
+          description: Project restored
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ============================================================================
+  # SOURCES
+  # ============================================================================
+  /projects/{projectId}/sources:
+    get:
+      tags: [Sources]
+      summary: List sources
+      description: Returns all sources for a project.
+      operationId: listSources
+      parameters:
+        - $ref: '#/components/parameters/projectId'
+      responses:
+        '200':
+          description: List of sources
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SourceListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /projects/{projectId}/sources/file:
+    post:
+      tags: [Sources]
+      summary: Upload file source
+      description: Uploads a CSV, Excel, or JSON file as a data source.
+      operationId: uploadFileSource
+      x-required-role: editor
+      x-rate-limit: upload
+      parameters:
+        - $ref: '#/components/parameters/projectId'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - file
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: CSV, Excel (.xlsx, .xls), or JSON file (max 50MB)
+                name:
+                  type: string
+                  maxLength: 100
+                  description: Optional display name for the source
+      responses:
+        '201':
+          description: File uploaded and source created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SourceResponse'
+        '400':
+          description: Invalid file type or malformed file
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '413':
+          description: File too large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
+
+  /projects/{projectId}/sources/teamwork:
+    post:
+      tags: [Sources]
+      summary: Connect Teamwork Desk
+      description: Connects a Teamwork Desk account as a data source.
+      operationId: connectTeamwork
+      x-required-role: editor
+      parameters:
+        - $ref: '#/components/parameters/projectId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConnectTeamworkRequest'
+      responses:
+        '201':
+          description: Teamwork Desk connected
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SourceResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          description: Connection failed or validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /projects/{projectId}/sources/gohighlevel:
+    post:
+      tags: [Sources]
+      summary: Connect GoHighLevel
+      description: Connects a GoHighLevel account as a data source.
+      operationId: connectGoHighLevel
+      x-required-role: editor
+      parameters:
+        - $ref: '#/components/parameters/projectId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConnectGoHighLevelRequest'
+      responses:
+        '201':
+          description: GoHighLevel connected
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SourceResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          description: Connection failed or validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /sources/{sourceId}:
+    get:
+      tags: [Sources]
+      summary: Get source details
+      description: Returns source configuration and status.
+      operationId: getSource
+      parameters:
+        - $ref: '#/components/parameters/sourceId'
+      responses:
+        '200':
+          description: Source details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SourceDetailResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      x-failure-modes:
+        - input: "/sources/123"
+          behavior: "Returns source"
+          status: 200
+        - input: "/sources/abc"
+          behavior: "Invalid ID"
+          status: 400
+          errorCode: INVALID_ID
+        - input: "/sources/999999"
+          behavior: "Not found"
+          status: 404
+          errorCode: SOURCE_NOT_FOUND
+
+    patch:
+      tags: [Sources]
+      summary: Update source config
+      description: Updates source configuration (filters, settings).
+      operationId: updateSource
+      x-required-role: editor
+      parameters:
+        - $ref: '#/components/parameters/sourceId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateSourceRequest'
+      responses:
+        '200':
+          description: Source updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SourceResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+    delete:
+      tags: [Sources]
+      summary: Delete source
+      description: Deletes a source and all associated data.
+      operationId: deleteSource
+      x-required-role: editor
+      parameters:
+        - $ref: '#/components/parameters/sourceId'
+      responses:
+        '200':
+          description: Source deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessMessage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /sources/{sourceId}/test:
+    post:
+      tags: [Sources]
+      summary: Test connection
+      description: Tests API source connection. Only for API sources.
+      operationId: testSourceConnection
+      x-required-role: editor
+      parameters:
+        - $ref: '#/components/parameters/sourceId'
+      responses:
+        '200':
+          description: Connection successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConnectionTestResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          description: Connection failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConnectionTestResponse'
+
+  /sources/{sourceId}/preview:
+    get:
+      tags: [Sources]
+      summary: Preview source data
+      description: Returns sample rows from the source.
+      operationId: previewSource
+      parameters:
+        - $ref: '#/components/parameters/sourceId'
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 10
+            maximum: 50
+          description: Number of sample rows
+      responses:
+        '200':
+          description: Preview data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SourcePreviewResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /sources/{sourceId}/sync:
+    post:
+      tags: [Sources]
+      summary: Trigger sync
+      description: Triggers data sync from API source.
+      operationId: syncSource
+      x-required-role: editor
+      parameters:
+        - $ref: '#/components/parameters/sourceId'
+      responses:
+        '202':
+          description: Sync started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SourceResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ============================================================================
+  # MAPPINGS
+  # ============================================================================
+  /sources/{sourceId}/mappings:
+    get:
+      tags: [Mappings]
+      summary: Get mappings
+      description: Returns current field mappings for a source.
+      operationId: getMappings
+      parameters:
+        - $ref: '#/components/parameters/sourceId'
+      responses:
+        '200':
+          description: Field mappings
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MappingsResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    put:
+      tags: [Mappings]
+      summary: Update mappings
+      description: Replaces all field mappings for a source.
+      operationId: updateMappings
+      x-required-role: editor
+      parameters:
+        - $ref: '#/components/parameters/sourceId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateMappingsRequest'
+      responses:
+        '200':
+          description: Mappings updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MappingsResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /sources/{sourceId}/mappings/auto-detect:
+    post:
+      tags: [Mappings]
+      summary: Auto-detect mappings
+      description: Analyzes source schema and suggests field mappings.
+      operationId: autoDetectMappings
+      x-required-role: editor
+      parameters:
+        - $ref: '#/components/parameters/sourceId'
+      responses:
+        '200':
+          description: Suggested mappings
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MappingsResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /sources/{sourceId}/mappings/preview:
+    get:
+      tags: [Mappings]
+      summary: Preview with mappings
+      description: Returns sample rows with current mappings and de-identification applied.
+      operationId: previewMappings
+      parameters:
+        - $ref: '#/components/parameters/sourceId'
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 10
+            maximum: 50
+      responses:
+        '200':
+          description: Preview with mappings applied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MappingPreviewResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ============================================================================
+  # PROCESSING
+  # ============================================================================
+  /projects/{projectId}/jobs:
+    post:
+      tags: [Processing]
+      summary: Start processing
+      description: Starts a new processing job for the project.
+      operationId: startProcessing
+      x-required-role: editor
+      parameters:
+        - $ref: '#/components/parameters/projectId'
+      responses:
+        '202':
+          description: Processing job started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Processing job already running
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    get:
+      tags: [Processing]
+      summary: List jobs
+      description: Returns processing job history for the project.
+      operationId: listJobs
+      parameters:
+        - $ref: '#/components/parameters/projectId'
+        - $ref: '#/components/parameters/page'
+        - $ref: '#/components/parameters/limit'
+      responses:
+        '200':
+          description: List of processing jobs
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /jobs/{jobId}:
+    get:
+      tags: [Processing]
+      summary: Get job status
+      description: Returns job details and progress.
+      operationId: getJob
+      parameters:
+        - $ref: '#/components/parameters/jobId'
+      responses:
+        '200':
+          description: Job details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobDetailResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      x-failure-modes:
+        - input: "/jobs/123"
+          behavior: "Returns job"
+          status: 200
+        - input: "/jobs/abc"
+          behavior: "Invalid ID"
+          status: 400
+          errorCode: INVALID_ID
+        - input: "/jobs/999999"
+          behavior: "Not found"
+          status: 404
+          errorCode: JOB_NOT_FOUND
+
+  /jobs/{jobId}/cancel:
+    post:
+      tags: [Processing]
+      summary: Cancel job
+      description: Cancels a running processing job.
+      operationId: cancelJob
+      x-required-role: editor
+      parameters:
+        - $ref: '#/components/parameters/jobId'
+      responses:
+        '200':
+          description: Job cancelled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          description: Job cannot be cancelled (not running)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # ============================================================================
+  # EXPORTS
+  # ============================================================================
+  /jobs/{jobId}/exports:
+    post:
+      tags: [Exports]
+      summary: Generate export
+      description: Generates an export file from a completed processing job.
+      operationId: generateExport
+      x-required-role: editor
+      parameters:
+        - $ref: '#/components/parameters/jobId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenerateExportRequest'
+      responses:
+        '201':
+          description: Export generated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExportResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          description: Job not completed or validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    get:
+      tags: [Exports]
+      summary: List exports
+      description: Returns exports for a processing job.
+      operationId: listExports
+      parameters:
+        - $ref: '#/components/parameters/jobId'
+      responses:
+        '200':
+          description: List of exports
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExportListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /exports/{exportId}:
+    get:
+      tags: [Exports]
+      summary: Get export details
+      description: Returns export metadata.
+      operationId: getExport
+      parameters:
+        - $ref: '#/components/parameters/exportId'
+      responses:
+        '200':
+          description: Export details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExportResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      x-failure-modes:
+        - input: "/exports/123"
+          behavior: "Returns export"
+          status: 200
+        - input: "/exports/abc"
+          behavior: "Invalid ID"
+          status: 400
+          errorCode: INVALID_ID
+        - input: "/exports/999999"
+          behavior: "Not found"
+          status: 404
+          errorCode: EXPORT_NOT_FOUND
+
+  /exports/{exportId}/download:
+    get:
+      tags: [Exports]
+      summary: Download export
+      description: Downloads the export file.
+      operationId: downloadExport
+      parameters:
+        - $ref: '#/components/parameters/exportId'
+      responses:
+        '200':
+          description: Export file
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+            application/json:
+              schema:
+                type: string
+                format: binary
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '410':
+          description: Export expired
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # ============================================================================
+  # AUDIT LOGS
+  # ============================================================================
+  /audit-logs:
+    get:
+      tags: [Audit]
+      summary: List audit logs
+      description: Returns audit log entries for the organization. Requires admin role.
+      operationId: listAuditLogs
+      x-required-role: admin
+      parameters:
+        - name: action
+          in: query
+          schema:
+            type: string
+          description: Filter by action type
+        - name: user_id
+          in: query
+          schema:
+            type: integer
+          description: Filter by user
+        - name: date_from
+          in: query
+          schema:
+            type: string
+            format: date-time
+          description: Start date filter
+        - name: date_to
+          in: query
+          schema:
+            type: string
+            format: date-time
+          description: End date filter
+        - $ref: '#/components/parameters/page'
+        - $ref: '#/components/parameters/limit'
+      responses:
+        '200':
+          description: List of audit log entries
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditLogListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /audit-logs/export:
+    get:
+      tags: [Audit]
+      summary: Export audit logs
+      description: Exports audit logs as CSV. Requires admin role.
+      operationId: exportAuditLogs
+      x-required-role: admin
+      parameters:
+        - name: date_from
+          in: query
+          schema:
+            type: string
+            format: date-time
+          description: Start date filter
+        - name: date_to
+          in: query
+          schema:
+            type: string
+            format: date-time
+          description: End date filter
+      responses:
+        '200':
+          description: CSV file
+          content:
+            text/csv:
+              schema:
+                type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  # ============================================================================
+  # PLATFORM ADMIN
+  # ============================================================================
+  /admin/organizations:
+    get:
+      tags: [Admin]
+      summary: List all organizations
+      description: Returns all organizations. Requires platform admin.
+      operationId: listOrganizations
+      x-required-role: platform_admin
+      parameters:
+        - name: search
+          in: query
+          schema:
+            type: string
+          description: Search by name
+        - $ref: '#/components/parameters/page'
+        - $ref: '#/components/parameters/limit'
+      responses:
+        '200':
+          description: List of organizations
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrganizationListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+    post:
+      tags: [Admin]
+      summary: Create organization
+      description: Creates a new organization and sends invite to initial admin. Requires platform admin.
+      operationId: createOrganization
+      x-required-role: platform_admin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateOrganizationRequest'
+      responses:
+        '201':
+          description: Organization created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrganizationResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          description: Organization name already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /admin/organizations/{orgId}:
+    get:
+      tags: [Admin]
+      summary: Get organization details
+      description: Returns organization details with usage stats. Requires platform admin.
+      operationId: getOrganization
+      x-required-role: platform_admin
+      parameters:
+        - $ref: '#/components/parameters/orgId'
+      responses:
+        '200':
+          description: Organization details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrganizationDetailResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /admin/organizations/{orgId}/disable:
+    post:
+      tags: [Admin]
+      summary: Disable organization
+      description: Disables an organization, preventing all user access. Requires platform admin.
+      operationId: disableOrganization
+      x-required-role: platform_admin
+      parameters:
+        - $ref: '#/components/parameters/orgId'
+      responses:
+        '200':
+          description: Organization disabled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrganizationResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /admin/organizations/{orgId}/enable:
+    post:
+      tags: [Admin]
+      summary: Enable organization
+      description: Re-enables a disabled organization. Requires platform admin.
+      operationId: enableOrganization
+      x-required-role: platform_admin
+      parameters:
+        - $ref: '#/components/parameters/orgId'
+      responses:
+        '200':
+          description: Organization enabled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrganizationResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /admin/health:
+    get:
+      tags: [Admin]
+      summary: System health details
+      description: Returns detailed system health metrics. Requires platform admin.
+      operationId: getSystemHealth
+      x-required-role: platform_admin
+      responses:
+        '200':
+          description: System health metrics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SystemHealthResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT access token
+
+  parameters:
+    page:
+      name: page
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+      description: Page number (1-indexed)
+    
+    limit:
+      name: limit
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+      description: Items per page
+    
+    projectId:
+      name: projectId
+      in: path
+      required: true
+      schema:
+        type: integer
+        minimum: 1
+      description: Project ID
+    
+    sourceId:
+      name: sourceId
+      in: path
+      required: true
+      schema:
+        type: integer
+        minimum: 1
+      description: Source ID
+    
+    jobId:
+      name: jobId
+      in: path
+      required: true
+      schema:
+        type: integer
+        minimum: 1
+      description: Processing job ID
+    
+    exportId:
+      name: exportId
+      in: path
+      required: true
+      schema:
+        type: integer
+        minimum: 1
+      description: Export ID
+    
+    invitationId:
+      name: invitationId
+      in: path
+      required: true
+      schema:
+        type: integer
+        minimum: 1
+      description: Invitation ID
+    
+    userId:
+      name: userId
+      in: path
+      required: true
+      schema:
+        type: integer
+        minimum: 1
+      description: User ID
+    
+    orgId:
+      name: orgId
+      in: path
+      required: true
+      schema:
+        type: integer
+        minimum: 1
+      description: Organization ID
+
+  responses:
+    Unauthorized:
+      description: Authentication required
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: Authentication required
+    
+    InvalidCredentials:
+      description: Invalid credentials
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error:
+              code: INVALID_CREDENTIALS
+              message: Invalid email or password
+    
+    TokenExpired:
+      description: Token expired
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error:
+              code: TOKEN_EXPIRED
+              message: Session expired, please login again
+    
+    Forbidden:
+      description: Permission denied
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error:
+              code: FORBIDDEN
+              message: Insufficient permissions
+    
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error:
+              code: NOT_FOUND
+              message: Resource not found
+    
+    ValidationError:
+      description: Validation failed
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: Request validation failed
+              details:
+                - field: email
+                  code: invalid_string
+                  message: Invalid email format
+    
+    RateLimitExceeded:
+      description: Rate limit exceeded
+      headers:
+        X-RateLimit-Limit:
+          schema:
+            type: integer
+        X-RateLimit-Remaining:
+          schema:
+            type: integer
+        X-RateLimit-Reset:
+          schema:
+            type: integer
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error:
+              code: RATE_LIMIT_EXCEEDED
+              message: Too many requests, please try again later
+
+  schemas:
+    # =========================================================================
+    # Common
+    # =========================================================================
+    ErrorResponse:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: object
+          required:
+            - code
+            - message
+          properties:
+            code:
+              type: string
+              description: Error code from ERROR_CODES registry
+            message:
+              type: string
+              description: Human-readable error message
+            details:
+              type: array
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                  code:
+                    type: string
+                  message:
+                    type: string
+    
+    SuccessMessage:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          type: object
+          properties:
+            message:
+              type: string
+    
+    Pagination:
+      type: object
+      required:
+        - page
+        - limit
+        - total
+        - totalPages
+        - hasMore
+      properties:
+        page:
+          type: integer
+        limit:
+          type: integer
+        total:
+          type: integer
+        totalPages:
+          type: integer
+        hasMore:
+          type: boolean
+
+    # =========================================================================
+    # System
+    # =========================================================================
+    HealthResponse:
+      type: object
+      required:
+        - status
+        - timestamp
+      properties:
+        status:
+          type: string
+          enum: [ok, unhealthy]
+        timestamp:
+          type: string
+          format: date-time
+        version:
+          type: string
+        error:
+          type: string
+
+    SystemHealthResponse:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          type: object
+          properties:
+            status:
+              type: string
+              enum: [ok, degraded, unhealthy]
+            database:
+              type: object
+              properties:
+                connected:
+                  type: boolean
+                latencyMs:
+                  type: integer
+            jobs:
+              type: object
+              properties:
+                active:
+                  type: integer
+                queueDepth:
+                  type: integer
+                errorRate24h:
+                  type: number
+            storage:
+              type: object
+              properties:
+                usedBytes:
+                  type: integer
+                limitBytes:
+                  type: integer
+
+    # =========================================================================
+    # Authentication
+    # =========================================================================
+    LoginRequest:
+      type: object
+      required:
+        - email
+        - password
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 255
+        password:
+          type: string
+          minLength: 1
+    
+    LoginResponse:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          type: object
+          required:
+            - accessToken
+            - user
+          properties:
+            accessToken:
+              type: string
+            user:
+              $ref: '#/components/schemas/User'
+            organization:
+              $ref: '#/components/schemas/Organization'
+    
+    RefreshResponse:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          type: object
+          required:
+            - accessToken
+          properties:
+            accessToken:
+              type: string
+    
+    CurrentUserResponse:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/User'
+            - type: object
+              properties:
+                organization:
+                  $ref: '#/components/schemas/Organization'
+                role:
+                  type: string
+                  enum: [viewer, editor, admin]
+    
+    ForgotPasswordRequest:
+      type: object
+      required:
+        - email
+      properties:
+        email:
+          type: string
+          format: email
+    
+    ResetPasswordRequest:
+      type: object
+      required:
+        - token
+        - password
+      properties:
+        token:
+          type: string
+        password:
+          type: string
+          minLength: 8
+          description: Must contain uppercase, lowercase, and number
+
+    # =========================================================================
+    # Users
+    # =========================================================================
+    User:
+      type: object
+      required:
+        - id
+        - email
+        - name
+        - createdAt
+      properties:
+        id:
+          type: integer
+        email:
+          type: string
+          format: email
+        name:
+          type: string
+        isPlatformAdmin:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    # =========================================================================
+    # Invitations
+    # =========================================================================
+    CreateInvitationRequest:
+      type: object
+      required:
+        - email
+        - role
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 255
+        role:
+          type: string
+          enum: [viewer, editor, admin]
+    
+    InvitationResponse:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          $ref: '#/components/schemas/Invitation'
+    
+    InvitationListResponse:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Invitation'
+    
+    Invitation:
+      type: object
+      required:
+        - id
+        - email
+        - role
+        - expiresAt
+        - createdAt
+      properties:
+        id:
+          type: integer
+        email:
+          type: string
+          format: email
+        role:
+          type: string
+          enum: [viewer, editor, admin]
+        expiresAt:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+        invitedBy:
+          type: object
+          properties:
+            id:
+              type: integer
+            name:
+              type: string
+    
+    InvitationValidationResponse:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          type: object
+          required:
+            - email
+            - organizationName
+            - role
+          properties:
+            email:
+              type: string
+            organizationName:
+              type: string
+            role:
+              type: string
+    
+    AcceptInvitationRequest:
+      type: object
+      required:
+        - name
+        - password
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        password:
+          type: string
+          minLength: 8
+
+    # =========================================================================
+    # Team
+    # =========================================================================
+    TeamMemberListResponse:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/TeamMember'
+    
+    TeamMemberResponse:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          $ref: '#/components/schemas/TeamMember'
+    
+    TeamMember:
+      type: object
+      required:
+        - id
+        - email
+        - name
+        - role
+        - joinedAt
+      properties:
+        id:
+          type: integer
+        email:
+          type: string
+        name:
+          type: string
+        role:
+          type: string
+          enum: [viewer, editor, admin]
+        joinedAt:
+          type: string
+          format: date-time
+    
+    UpdateTeamMemberRequest:
+      type: object
+      required:
+        - role
+      properties:
+        role:
+          type: string
+          enum: [viewer, editor, admin]
+
+    # =========================================================================
+    # Organizations
+    # =========================================================================
+    Organization:
+      type: object
+      required:
+        - id
+        - name
+        - createdAt
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        disabledAt:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+    
+    CreateOrganizationRequest:
+      type: object
+      required:
+        - name
+        - adminEmail
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        adminEmail:
+          type: string
+          format: email
+    
+    OrganizationResponse:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          $ref: '#/components/schemas/Organization'
+    
+    OrganizationListResponse:
+      type: object
+      required:
+        - data
+        - pagination
+      properties:
+        data:
+          type: array
+          items:
+            allOf:
+              - $ref: '#/components/schemas/Organization'
+              - type: object
+                properties:
+                  userCount:
+                    type: integer
+                  projectCount:
+                    type: integer
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+    
+    OrganizationDetailResponse:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          allOf:
+            - $ref: '#/components/schemas/Organization'
+            - type: object
+              properties:
+                userCount:
+                  type: integer
+                projectCount:
+                  type: integer
+                lastActivityAt:
+                  type: string
+                  format: date-time
+
+    # =========================================================================
+    # Projects
+    # =========================================================================
+    CreateProjectRequest:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        description:
+          type: string
+          maxLength: 1000
+    
+    UpdateProjectRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        description:
+          type: string
+          maxLength: 1000
+        piiSettings:
+          $ref: '#/components/schemas/PiiSettings'
+        filterSettings:
+          $ref: '#/components/schemas/FilterSettings'
+    
+    PiiSettings:
+      type: object
+      properties:
+        emailDomainAllowList:
+          type: array
+          items:
+            type: string
+        companyAllowList:
+          type: array
+          items:
+            type: string
+        customPatterns:
+          type: array
+          items:
+            type: object
+            required:
+              - pattern
+              - token
+            properties:
+              pattern:
+                type: string
+                description: Regex pattern
+              token:
+                type: string
+                description: Replacement token
+              description:
+                type: string
+    
+    FilterSettings:
+      type: object
+      properties:
+        minMessageCount:
+          type: integer
+          minimum: 1
+        minWordCount:
+          type: integer
+          minimum: 1
+        dateRange:
+          type: object
+          properties:
+            start:
+              type: string
+              format: date-time
+            end:
+              type: string
+              format: date-time
+            rolling:
+              type: string
+              description: e.g., "6months"
+        statusFilter:
+          type: array
+          items:
+            type: string
+    
+    ProjectResponse:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          $ref: '#/components/schemas/Project'
+    
+    ProjectListResponse:
+      type: object
+      required:
+        - data
+        - pagination
+      properties:
+        data:
+          type: array
+          items:
+            allOf:
+              - $ref: '#/components/schemas/Project'
+              - type: object
+                properties:
+                  sourceCount:
+                    type: integer
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+    
+    ProjectDetailResponse:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          allOf:
+            - $ref: '#/components/schemas/Project'
+            - type: object
+              properties:
+                sourceCount:
+                  type: integer
+                latestJob:
+                  $ref: '#/components/schemas/JobSummary'
+    
+    Project:
+      type: object
+      required:
+        - id
+        - name
+        - status
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        description:
+          type: string
+        status:
+          type: string
+          enum: [active, archived]
+        archivedAt:
+          type: string
+          format: date-time
+          nullable: true
+        piiSettings:
+          $ref: '#/components/schemas/PiiSettings'
+        filterSettings:
+          $ref: '#/components/schemas/FilterSettings'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    # =========================================================================
+    # Sources
+    # =========================================================================
+    SourceListResponse:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Source'
+    
+    SourceResponse:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          $ref: '#/components/schemas/Source'
+    
+    SourceDetailResponse:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          allOf:
+            - $ref: '#/components/schemas/Source'
+            - type: object
+              properties:
+                rawSchema:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      name:
+                        type: string
+                      type:
+                        type: string
+                      sample:
+                        type: array
+                        items:
+                          type: string
+    
+    Source:
+      type: object
+      required:
+        - id
+        - projectId
+        - type
+        - name
+        - status
+        - createdAt
+      properties:
+        id:
+          type: integer
+        projectId:
+          type: integer
+        type:
+          type: string
+          enum: [file, teamwork, gohighlevel]
+        name:
+          type: string
+        status:
+          type: string
+          enum: [pending, connected, error, syncing]
+        recordCount:
+          type: integer
+          nullable: true
+        lastSyncAt:
+          type: string
+          format: date-time
+          nullable: true
+        lastError:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    
+    ConnectTeamworkRequest:
+      type: object
+      required:
+        - name
+        - subdomain
+        - apiKey
+      properties:
+        name:
+          type: string
+          maxLength: 100
+        subdomain:
+          type: string
+        apiKey:
+          type: string
+        filters:
+          type: object
+          properties:
+            dateStart:
+              type: string
+              format: date-time
+            dateEnd:
+              type: string
+              format: date-time
+            statuses:
+              type: array
+              items:
+                type: string
+            includeInternalNotes:
+              type: boolean
+    
+    ConnectGoHighLevelRequest:
+      type: object
+      required:
+        - name
+        - apiKey
+      properties:
+        name:
+          type: string
+          maxLength: 100
+        apiKey:
+          type: string
+        selectedChannels:
+          type: array
+          items:
+            type: string
+            enum: [sms, email, call]
+        filters:
+          type: object
+          properties:
+            dateStart:
+              type: string
+              format: date-time
+            dateEnd:
+              type: string
+              format: date-time
+    
+    UpdateSourceRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 100
+        filters:
+          type: object
+          additionalProperties: true
+    
+    ConnectionTestResponse:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          type: object
+          required:
+            - success
+          properties:
+            success:
+              type: boolean
+            error:
+              type: string
+            recordCount:
+              type: integer
+    
+    SourcePreviewResponse:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          type: object
+          required:
+            - rows
+            - schema
+          properties:
+            rows:
+              type: array
+              items:
+                type: object
+                additionalProperties: true
+            schema:
+              type: array
+              items:
+                type: object
+                properties:
+                  name:
+                    type: string
+                  type:
+                    type: string
+
+    # =========================================================================
+    # Mappings
+    # =========================================================================
+    MappingsResponse:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          type: object
+          required:
+            - mappings
+            - schema
+          properties:
+            mappings:
+              type: array
+              items:
+                $ref: '#/components/schemas/FieldMapping'
+            schema:
+              type: array
+              items:
+                type: object
+                properties:
+                  name:
+                    type: string
+                  type:
+                    type: string
+                  sample:
+                    type: array
+                    items:
+                      type: string
+    
+    FieldMapping:
+      type: object
+      required:
+        - id
+        - sourceField
+        - targetField
+        - confidence
+        - isPii
+      properties:
+        id:
+          type: integer
+        sourceField:
+          type: string
+        targetField:
+          type: string
+        confidence:
+          type: string
+          enum: [high, medium, low]
+        isPii:
+          type: boolean
+    
+    UpdateMappingsRequest:
+      type: object
+      required:
+        - mappings
+      properties:
+        mappings:
+          type: array
+          items:
+            type: object
+            required:
+              - sourceField
+              - targetField
+            properties:
+              sourceField:
+                type: string
+              targetField:
+                type: string
+              isPii:
+                type: boolean
+    
+    MappingPreviewResponse:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          type: object
+          required:
+            - rows
+          properties:
+            rows:
+              type: array
+              items:
+                type: object
+                properties:
+                  original:
+                    type: object
+                    additionalProperties: true
+                  mapped:
+                    type: object
+                    additionalProperties: true
+
+    # =========================================================================
+    # Processing Jobs
+    # =========================================================================
+    JobListResponse:
+      type: object
+      required:
+        - data
+        - pagination
+      properties:
+        data:
+          type: array
+          items:
+            allOf:
+              - $ref: '#/components/schemas/Job'
+              - type: object
+                properties:
+                  triggeredBy:
+                    type: object
+                    properties:
+                      id:
+                        type: integer
+                      name:
+                        type: string
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+    
+    JobResponse:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          $ref: '#/components/schemas/Job'
+    
+    JobDetailResponse:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          allOf:
+            - $ref: '#/components/schemas/Job'
+            - type: object
+              properties:
+                triggeredBy:
+                  type: object
+                  properties:
+                    id:
+                      type: integer
+                    name:
+                      type: string
+                exports:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/ExportSummary'
+    
+    Job:
+      type: object
+      required:
+        - id
+        - projectId
+        - status
+        - progress
+        - createdAt
+      properties:
+        id:
+          type: integer
+        projectId:
+          type: integer
+        status:
+          type: string
+          enum: [pending, running, completed, failed, cancelled]
+        progress:
+          type: integer
+          minimum: 0
+          maximum: 100
+        recordsTotal:
+          type: integer
+        recordsProcessed:
+          type: integer
+        recordsFiltered:
+          type: integer
+        startedAt:
+          type: string
+          format: date-time
+          nullable: true
+        completedAt:
+          type: string
+          format: date-time
+          nullable: true
+        error:
+          type: string
+          nullable: true
+        warnings:
+          type: array
+          items:
+            type: string
+        createdAt:
+          type: string
+          format: date-time
+    
+    JobSummary:
+      type: object
+      properties:
+        id:
+          type: integer
+        status:
+          type: string
+          enum: [pending, running, completed, failed, cancelled]
+        progress:
+          type: integer
+        completedAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    # =========================================================================
+    # Exports
+    # =========================================================================
+    GenerateExportRequest:
+      type: object
+      required:
+        - format
+      properties:
+        format:
+          type: string
+          enum: [jsonl_conversation, jsonl_qa, json_raw]
+        config:
+          type: object
+          properties:
+            includeSystemPrompt:
+              type: boolean
+            systemPromptText:
+              type: string
+            contextWindow:
+              type: integer
+              minimum: 0
+            includeMetadata:
+              type: boolean
+    
+    ExportListResponse:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Export'
+    
+    ExportResponse:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          $ref: '#/components/schemas/Export'
+    
+    Export:
+      type: object
+      required:
+        - id
+        - jobId
+        - format
+        - fileSize
+        - recordCount
+        - expiresAt
+        - createdAt
+      properties:
+        id:
+          type: integer
+        jobId:
+          type: integer
+        format:
+          type: string
+          enum: [jsonl_conversation, jsonl_qa, json_raw]
+        fileSize:
+          type: integer
+        recordCount:
+          type: integer
+        downloadCount:
+          type: integer
+        expiresAt:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+    
+    ExportSummary:
+      type: object
+      properties:
+        id:
+          type: integer
+        format:
+          type: string
+        recordCount:
+          type: integer
+
+    # =========================================================================
+    # Audit Logs
+    # =========================================================================
+    AuditLogListResponse:
+      type: object
+      required:
+        - data
+        - pagination
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/AuditLog'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+    
+    AuditLog:
+      type: object
+      required:
+        - id
+        - action
+        - createdAt
+      properties:
+        id:
+          type: integer
+        userId:
+          type: integer
+          nullable: true
+        userName:
+          type: string
+          nullable: true
+        userEmail:
+          type: string
+          nullable: true
+        action:
+          type: string
+        resourceType:
+          type: string
+          nullable: true
+        resourceId:
+          type: integer
+          nullable: true
+        ipAddress:
+          type: string
+          nullable: true
+        details:
+          type: object
+          additionalProperties: true
+        createdAt:
+          type: string
+          format: date-time
