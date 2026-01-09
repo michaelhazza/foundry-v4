@@ -421,6 +421,47 @@ class SourceService {
 
     return { columns: [], sampleData: [] };
   }
+
+  async sync(id: number, organizationId: number, userId: number) {
+    const source = await this.getById(id, organizationId);
+
+    if (source.type === 'file') {
+      throw new BadRequestError('Cannot sync file sources');
+    }
+
+    let result;
+    if (source.type === 'teamwork') {
+      const config = source.config as { subdomain: string; apiKey: string };
+      result = await teamworkConnector.fetchData(config, { limit: 100 });
+    } else if (source.type === 'gohighlevel') {
+      const config = source.config as { apiKey: string; locationId?: string };
+      result = await gohighlevelConnector.fetchData(config, { limit: 100 });
+    } else {
+      throw new BadRequestError('Unknown source type');
+    }
+
+    // Update source with new sync timestamp
+    await db
+      .update(sources)
+      .set({
+        lastSyncAt: new Date(),
+        status: 'connected',
+        updatedAt: new Date(),
+      })
+      .where(eq(sources.id, id));
+
+    // Audit log
+    await auditService.log({
+      action: 'source.synced',
+      resourceType: 'source',
+      resourceId: id,
+      userId,
+      organizationId,
+      details: { recordCount: result.length },
+    });
+
+    return { success: true, recordCount: result.length };
+  }
 }
 
 export const sourceService = new SourceService();

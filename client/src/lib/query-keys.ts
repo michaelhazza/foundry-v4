@@ -15,6 +15,7 @@ export const queryKeys = {
   // Sources
   sources: {
     all: ['sources'] as const,
+    list: (projectId: number) => ['sources', 'project', projectId] as const,
     byProject: (projectId: number) => ['sources', 'project', projectId] as const,
     detail: (id: number) => ['sources', id] as const,
     preview: (id: number) => ['sources', id, 'preview'] as const,
@@ -22,6 +23,7 @@ export const queryKeys = {
 
   // Mappings
   mappings: {
+    list: (sourceId: number) => ['mappings', 'source', sourceId] as const,
     bySource: (sourceId: number) => ['mappings', 'source', sourceId] as const,
     preview: (sourceId: number) => ['mappings', 'source', sourceId, 'preview'] as const,
   },
@@ -29,6 +31,7 @@ export const queryKeys = {
   // Jobs
   jobs: {
     all: ['jobs'] as const,
+    list: (projectId: number) => ['jobs', 'project', projectId] as const,
     byProject: (projectId: number) => ['jobs', 'project', projectId] as const,
     detail: (id: number) => ['jobs', id] as const,
   },

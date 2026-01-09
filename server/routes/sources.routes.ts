@@ -3,7 +3,7 @@ import { z } from 'zod';
 import multer from 'multer';
 import path from 'path';
 import { validate } from '../middleware/validate';
-import { requireAuth } from '../middleware/auth';
+import { requireAuth, requireRole } from '../middleware/auth';
 import { uploadLimiter } from '../middleware/rate-limit';
 import { sourceService } from '../services/source.service';
 import { parseIntParam } from '../lib/validation';
@@ -190,6 +190,17 @@ router.get('/:id/preview', requireAuth, async (req, res, next) => {
     const id = parseIntParam(req.params.id, 'id');
     const preview = await sourceService.getPreview(id, req.auth!.organizationId);
     res.json({ data: preview });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// POST /api/sources/:id/sync - Trigger sync for API source
+router.post('/:id/sync', requireAuth, requireRole('editor'), async (req, res, next) => {
+  try {
+    const id = parseIntParam(req.params.id, 'id');
+    const result = await sourceService.sync(id, req.auth!.organizationId, req.auth!.userId);
+    res.json({ data: result });
   } catch (error) {
     next(error);
   }

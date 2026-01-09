@@ -6,26 +6,12 @@ import { queryKeys } from '@/lib/query-keys';
 import { cn } from '@/lib/utils';
 import type { Project } from '@/types';
 
-// Tab components (simplified for now)
-function SourcesTab() {
-  return <div className="rounded-lg border bg-card p-6">Sources management coming soon...</div>;
-}
-
-function MappingTab() {
-  return <div className="rounded-lg border bg-card p-6">Field mapping coming soon...</div>;
-}
-
-function ProcessingTab() {
-  return <div className="rounded-lg border bg-card p-6">Processing pipeline coming soon...</div>;
-}
-
-function ExportsTab() {
-  return <div className="rounded-lg border bg-card p-6">Exports management coming soon...</div>;
-}
-
-function SettingsTab() {
-  return <div className="rounded-lg border bg-card p-6">Project settings coming soon...</div>;
-}
+// Import tab components
+import { SourcesTab } from '@/components/project/sources-tab';
+import { MappingTab } from '@/components/project/mapping-tab';
+import { ProcessingTab } from '@/components/project/processing-tab';
+import { ExportsTab } from '@/components/project/exports-tab';
+import { SettingsTab } from '@/components/project/settings-tab';
 
 const tabs = [
   { id: 'sources', label: 'Sources', icon: FileUp },

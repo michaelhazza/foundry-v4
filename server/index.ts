@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import path from 'path';
+import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { env, logFeatureStatus } from './config/env';
 import { errorHandler } from './middleware/error-handler';
@@ -11,6 +12,14 @@ import routes from './routes';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// Create required directories on startup
+const dataDir = path.join(process.cwd(), 'data');
+const uploadsDir = path.join(dataDir, 'uploads');
+const exportsDir = path.join(dataDir, 'exports');
+
+fs.mkdirSync(uploadsDir, { recursive: true });
+fs.mkdirSync(exportsDir, { recursive: true });
 
 const app = express();
 

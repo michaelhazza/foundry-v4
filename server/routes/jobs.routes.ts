@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { validate } from '../middleware/validate';
-import { requireAuth } from '../middleware/auth';
+import { requireAuth, requireRole } from '../middleware/auth';
 import { processingService } from '../services/processing.service';
 import { parseIntParam, parsePagination } from '../lib/validation';
 
@@ -12,7 +12,7 @@ const startJobSchema = z.object({
 });
 
 // POST /api/projects/:projectId/jobs - Start processing job
-router.post('/projects/:projectId/jobs', requireAuth, validate(startJobSchema), async (req, res, next) => {
+router.post('/projects/:projectId/jobs', requireAuth, requireRole('editor'), validate(startJobSchema), async (req, res, next) => {
   try {
     const projectId = parseIntParam(req.params.projectId, 'projectId');
     const job = await processingService.startJob(
@@ -56,7 +56,7 @@ router.get('/:id', requireAuth, async (req, res, next) => {
 });
 
 // POST /api/jobs/:id/cancel - Cancel job
-router.post('/:id/cancel', requireAuth, async (req, res, next) => {
+router.post('/:id/cancel', requireAuth, requireRole('editor'), async (req, res, next) => {
   try {
     const id = parseIntParam(req.params.id, 'id');
     const job = await processingService.cancelJob(id, req.auth!.organizationId, req.auth!.userId);

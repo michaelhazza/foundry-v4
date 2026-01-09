@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { validate } from '../middleware/validate';
-import { requireAuth } from '../middleware/auth';
+import { requireAuth, requireRole } from '../middleware/auth';
 import { exportService } from '../services/export.service';
 import { parseIntParam } from '../lib/validation';
 
@@ -16,7 +16,7 @@ const createExportSchema = z.object({
 });
 
 // POST /api/jobs/:jobId/exports - Generate export
-router.post('/jobs/:jobId/exports', requireAuth, validate(createExportSchema), async (req, res, next) => {
+router.post('/jobs/:jobId/exports', requireAuth, requireRole('editor'), validate(createExportSchema), async (req, res, next) => {
   try {
     const jobId = parseIntParam(req.params.jobId, 'jobId');
     const exportRecord = await exportService.createExport(

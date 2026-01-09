@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { validate } from '../middleware/validate';
-import { requireAuth } from '../middleware/auth';
+import { requireAuth, requireRole } from '../middleware/auth';
 import { mappingService } from '../services/mapping.service';
 import { parseIntParam } from '../lib/validation';
 
@@ -31,6 +31,7 @@ router.get('/sources/:sourceId/mappings', requireAuth, async (req, res, next) =>
 router.put(
   '/sources/:sourceId/mappings',
   requireAuth,
+  requireRole('editor'),
   validate(updateMappingsSchema),
   async (req, res, next) => {
     try {
@@ -49,7 +50,7 @@ router.put(
 );
 
 // POST /api/sources/:sourceId/mappings/auto-detect - Auto-detect mappings
-router.post('/sources/:sourceId/mappings/auto-detect', requireAuth, async (req, res, next) => {
+router.post('/sources/:sourceId/mappings/auto-detect', requireAuth, requireRole('editor'), async (req, res, next) => {
   try {
     const sourceId = parseIntParam(req.params.sourceId, 'sourceId');
     const mappings = await mappingService.autoDetect(sourceId, req.auth!.organizationId);
