@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { validate } from '../middleware/validate';
-import { requireAuth } from '../middleware/auth';
+import { requireAuth, requireRole } from '../middleware/auth';
 import { projectService } from '../services/project.service';
 import { parseIntParam, parsePagination } from '../lib/validation';
 
@@ -33,7 +33,7 @@ const updateProjectSchema = z.object({
 });
 
 // POST /api/projects - Create project
-router.post('/', requireAuth, validate(createProjectSchema), async (req, res, next) => {
+router.post('/', requireAuth, requireRole('editor'), validate(createProjectSchema), async (req, res, next) => {
   try {
     const project = await projectService.create(req.auth!.organizationId, req.body, req.auth!.userId);
     res.status(201).json({ data: project });
@@ -74,7 +74,7 @@ router.get('/:id', requireAuth, async (req, res, next) => {
 });
 
 // PATCH /api/projects/:id - Update project
-router.patch('/:id', requireAuth, validate(updateProjectSchema), async (req, res, next) => {
+router.patch('/:id', requireAuth, requireRole('editor'), validate(updateProjectSchema), async (req, res, next) => {
   try {
     const id = parseIntParam(req.params.id, 'id');
     const project = await projectService.update(id, req.auth!.organizationId, req.body, req.auth!.userId);
@@ -85,7 +85,7 @@ router.patch('/:id', requireAuth, validate(updateProjectSchema), async (req, res
 });
 
 // POST /api/projects/:id/archive - Archive project
-router.post('/:id/archive', requireAuth, async (req, res, next) => {
+router.post('/:id/archive', requireAuth, requireRole('editor'), async (req, res, next) => {
   try {
     const id = parseIntParam(req.params.id, 'id');
     const project = await projectService.archive(id, req.auth!.organizationId, req.auth!.userId);
@@ -96,7 +96,7 @@ router.post('/:id/archive', requireAuth, async (req, res, next) => {
 });
 
 // POST /api/projects/:id/restore - Restore project
-router.post('/:id/restore', requireAuth, async (req, res, next) => {
+router.post('/:id/restore', requireAuth, requireRole('editor'), async (req, res, next) => {
   try {
     const id = parseIntParam(req.params.id, 'id');
     const project = await projectService.restore(id, req.auth!.organizationId, req.auth!.userId);

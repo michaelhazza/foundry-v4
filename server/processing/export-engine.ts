@@ -6,15 +6,15 @@ interface ExportOptions {
 class ExportEngine {
   generate(
     records: Record<string, unknown>[],
-    format: 'jsonl' | 'qa' | 'raw',
+    format: 'jsonl_conversation' | 'jsonl_qa' | 'json_raw',
     options?: ExportOptions
   ): string {
     switch (format) {
-      case 'jsonl':
+      case 'jsonl_conversation':
         return this.generateJsonl(records, options);
-      case 'qa':
+      case 'jsonl_qa':
         return this.generateQA(records, options);
-      case 'raw':
+      case 'json_raw':
         return this.generateRaw(records);
       default:
         throw new Error(`Unknown export format: ${format}`);

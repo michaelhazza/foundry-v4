@@ -75,6 +75,7 @@ router.get('/projects/:projectId/sources', requireAuth, async (req, res, next) =
 router.post(
   '/projects/:projectId/sources/file',
   requireAuth,
+  requireRole('editor'),
   uploadLimiter,
   upload.single('file'),
   async (req, res, next) => {
@@ -102,6 +103,7 @@ router.post(
 router.post(
   '/projects/:projectId/sources/teamwork',
   requireAuth,
+  requireRole('editor'),
   validate(teamworkSourceSchema),
   async (req, res, next) => {
     try {
@@ -123,6 +125,7 @@ router.post(
 router.post(
   '/projects/:projectId/sources/gohighlevel',
   requireAuth,
+  requireRole('editor'),
   validate(gohighlevelSourceSchema),
   async (req, res, next) => {
     try {
@@ -152,7 +155,7 @@ router.get('/:id', requireAuth, async (req, res, next) => {
 });
 
 // PATCH /api/sources/:id - Update source
-router.patch('/:id', requireAuth, validate(updateSourceSchema), async (req, res, next) => {
+router.patch('/:id', requireAuth, requireRole('editor'), validate(updateSourceSchema), async (req, res, next) => {
   try {
     const id = parseIntParam(req.params.id, 'id');
     const source = await sourceService.update(id, req.auth!.organizationId, req.body, req.auth!.userId);
@@ -163,7 +166,7 @@ router.patch('/:id', requireAuth, validate(updateSourceSchema), async (req, res,
 });
 
 // DELETE /api/sources/:id - Delete source
-router.delete('/:id', requireAuth, async (req, res, next) => {
+router.delete('/:id', requireAuth, requireRole('editor'), async (req, res, next) => {
   try {
     const id = parseIntParam(req.params.id, 'id');
     await sourceService.delete(id, req.auth!.organizationId, req.auth!.userId);
@@ -174,7 +177,7 @@ router.delete('/:id', requireAuth, async (req, res, next) => {
 });
 
 // POST /api/sources/:id/test - Test source connection
-router.post('/:id/test', requireAuth, async (req, res, next) => {
+router.post('/:id/test', requireAuth, requireRole('editor'), async (req, res, next) => {
   try {
     const id = parseIntParam(req.params.id, 'id');
     const result = await sourceService.testConnection(id, req.auth!.organizationId);

@@ -8,7 +8,7 @@ import { parseIntParam } from '../lib/validation';
 const router = Router();
 
 const updateRoleSchema = z.object({
-  role: z.enum(['admin', 'member']),
+  role: z.enum(['viewer', 'editor', 'admin']),
 });
 
 // GET /api/team - List team members

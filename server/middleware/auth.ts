@@ -10,7 +10,7 @@ export interface AuthContext {
   userId: number;
   email: string;
   organizationId: number;
-  role: 'admin' | 'member';
+  role: 'viewer' | 'editor' | 'admin';
   isPlatformAdmin: boolean;
 }
 
@@ -26,7 +26,7 @@ interface JwtPayload {
   userId: number;
   email: string;
   organizationId: number;
-  role: 'admin' | 'member';
+  role: 'viewer' | 'editor' | 'admin';
   isPlatformAdmin: boolean;
 }
 
@@ -84,7 +84,7 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
       userId: payload.userId,
       email: payload.email,
       organizationId: payload.organizationId,
-      role: membership.role as 'admin' | 'member',
+      role: membership.role as 'viewer' | 'editor' | 'admin',
       isPlatformAdmin: payload.isPlatformAdmin,
     };
 
@@ -94,13 +94,18 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
   }
 }
 
-export function requireRole(...roles: Array<'admin' | 'member'>) {
+export function requireRole(...roles: Array<'viewer' | 'editor' | 'admin'>) {
   return (req: Request, res: Response, next: NextFunction) => {
     if (!req.auth) {
       return next(new UnauthorizedError());
     }
 
-    if (!roles.includes(req.auth.role)) {
+    // Hierarchical role check: admin > editor > viewer
+    const roleHierarchy: Record<string, number> = { viewer: 1, editor: 2, admin: 3 };
+    const userLevel = roleHierarchy[req.auth.role] || 0;
+    const requiredLevel = Math.min(...roles.map(r => roleHierarchy[r]));
+
+    if (userLevel < requiredLevel) {
       return next(new ForbiddenError('Insufficient permissions'));
     }
 

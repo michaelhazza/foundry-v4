@@ -7,6 +7,7 @@ import { env, features } from '../config/env';
 import { UnauthorizedError, NotFoundError, BadRequestError } from '../errors';
 import { generateToken, hashToken } from '../lib/crypto';
 import { auditService } from './audit.service';
+import { emailConnector } from '../connectors/email.connector';
 
 const ACCESS_TOKEN_EXPIRY = '15m';
 const REFRESH_TOKEN_EXPIRY = '7d';
@@ -250,12 +251,7 @@ class AuthService {
     // Send email or log
     const resetUrl = `${env.APP_URL}/reset-password?token=${token}`;
 
-    if (features.email) {
-      // TODO: Send email via Resend
-      console.log(`[EMAIL] Password reset link: ${resetUrl}`);
-    } else {
-      console.log(`[DEV] Password reset link for ${email}: ${resetUrl}`);
-    }
+    await emailConnector.sendPasswordReset(email, resetUrl);
   }
 
   async resetPassword(token: string, newPassword: string): Promise<void> {

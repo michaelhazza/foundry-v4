@@ -9,7 +9,7 @@ const router = Router();
 
 const createInvitationSchema = z.object({
   email: z.string().email('Invalid email address'),
-  role: z.enum(['admin', 'member']),
+  role: z.enum(['viewer', 'editor', 'admin']),
 });
 
 const acceptInvitationSchema = z.object({

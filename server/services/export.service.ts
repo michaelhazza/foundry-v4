@@ -16,7 +16,7 @@ class ExportService {
   async createExport(
     jobId: number,
     organizationId: number,
-    format: 'jsonl' | 'qa' | 'raw',
+    format: 'jsonl_conversation' | 'jsonl_qa' | 'json_raw',
     options: ExportOptions | undefined,
     userId: number
   ) {
@@ -53,7 +53,7 @@ class ExportService {
     const exportDir = path.join(process.cwd(), 'data', 'exports', String(organizationId));
     await fs.promises.mkdir(exportDir, { recursive: true });
 
-    const filename = `export-${jobId}-${format}-${Date.now()}${format === 'raw' ? '.json' : '.jsonl'}`;
+    const filename = `export-${jobId}-${format}-${Date.now()}${format === 'json_raw' ? '.json' : '.jsonl'}`;
     const filePath = path.join(exportDir, filename);
 
     const exportData = exportEngine.generate(
@@ -145,7 +145,7 @@ class ExportService {
     const stream = fs.createReadStream(exportRecord.filePath);
     const filename = path.basename(exportRecord.filePath);
     const contentType =
-      exportRecord.format === 'raw' ? 'application/json' : 'application/x-jsonlines';
+      exportRecord.format === 'json_raw' ? 'application/json' : 'application/x-jsonlines';
 
     return { stream, filename, contentType };
   }

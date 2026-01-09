@@ -8,7 +8,7 @@ import { parseIntParam } from '../lib/validation';
 const router = Router();
 
 const createExportSchema = z.object({
-  format: z.enum(['jsonl', 'qa', 'raw']),
+  format: z.enum(['jsonl_conversation', 'jsonl_qa', 'json_raw']),
   options: z.object({
     systemPrompt: z.string().optional(),
     contextWindow: z.number().int().min(1).max(10).optional(),

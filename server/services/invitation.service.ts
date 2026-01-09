@@ -6,6 +6,7 @@ import { NotFoundError, ConflictError, BadRequestError } from '../errors';
 import { generateToken, hashToken } from '../lib/crypto';
 import { authService } from './auth.service';
 import { auditService } from './audit.service';
+import { emailConnector } from '../connectors/email.connector';
 
 const INVITATION_EXPIRY_DAYS = 7;
 
@@ -13,7 +14,7 @@ class InvitationService {
   async create(
     organizationId: number,
     email: string,
-    role: 'admin' | 'member',
+    role: 'viewer' | 'editor' | 'admin',
     invitedBy: number
   ) {
     const normalizedEmail = email.toLowerCase();
@@ -83,15 +84,10 @@ class InvitationService {
       })
       .returning();
 
-    // Send email or log
+    // Send email
     const inviteUrl = `${env.APP_URL}/accept-invitation?token=${token}`;
 
-    if (features.email) {
-      // TODO: Send email via Resend
-      console.log(`[EMAIL] Invitation link: ${inviteUrl}`);
-    } else {
-      console.log(`[DEV] Invitation link for ${normalizedEmail}: ${inviteUrl}`);
-    }
+    await emailConnector.sendInvitation(normalizedEmail, org?.name || 'Unknown', inviteUrl);
 
     // Audit log
     await auditService.log({

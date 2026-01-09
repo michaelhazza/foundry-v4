@@ -44,7 +44,7 @@ export const processedRecords = pgTable('processed_records', {
 export const exports = pgTable('exports', {
   id: serial('id').primaryKey(),
   jobId: integer('job_id').notNull().references(() => processingJobs.id, { onDelete: 'cascade' }),
-  format: varchar('format', { length: 50 }).notNull(), // 'jsonl' | 'qa' | 'raw'
+  format: varchar('format', { length: 50 }).notNull(), // 'jsonl_conversation' | 'jsonl_qa' | 'json_raw'
   filePath: text('file_path').notNull(),
   fileSize: bigint('file_size', { mode: 'number' }).notNull(),
   recordCount: integer('record_count').notNull(),

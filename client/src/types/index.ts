@@ -5,7 +5,7 @@ export interface User {
   name: string;
   organizationId?: number;
   organizationName?: string;
-  role?: 'admin' | 'member';
+  role?: 'viewer' | 'editor' | 'admin';
   isPlatformAdmin?: boolean;
 }
 
@@ -14,7 +14,7 @@ export interface Project {
   id: number;
   name: string;
   description?: string;
-  status: 'draft' | 'processing' | 'completed' | 'error';
+  status: 'active' | 'archived';
   piiSettings?: PiiSettings;
   filterSettings?: FilterSettings;
   archivedAt?: string;
@@ -87,7 +87,7 @@ export interface ProcessingJob {
 export interface Export {
   id: number;
   jobId: number;
-  format: 'jsonl' | 'qa' | 'raw';
+  format: 'jsonl_conversation' | 'jsonl_qa' | 'json_raw';
   filePath: string;
   fileSize: number;
   recordCount: number;
@@ -100,14 +100,14 @@ export interface TeamMember {
   id: number;
   email: string;
   name: string;
-  role: 'admin' | 'member';
+  role: 'viewer' | 'editor' | 'admin';
   joinedAt: string;
 }
 
 export interface Invitation {
   id: number;
   email: string;
-  role: 'admin' | 'member';
+  role: 'viewer' | 'editor' | 'admin';
   expiresAt: string;
   createdAt: string;
   invitedByName?: string;
